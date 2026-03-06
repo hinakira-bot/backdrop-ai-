@@ -7,7 +7,10 @@ import {
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import JSZip from 'jszip';
-import { analyzeContent, fetchUrlContent, generateImage } from './geminiClient';
+import {
+  analyzeContent, fetchUrlContent, generateImage,
+  extractYouTubeVideoId, fetchYouTubeThumbnail, analyzeYoutubeThumbnail,
+} from './geminiClient';
 
 // ===== 定数 =====
 
@@ -211,6 +214,7 @@ export default function BackdropAI() {
   // 入力
   const [inputMode, setInputMode] = useState('text'); // 'text' | 'url'
   const [inputText, setInputText] = useState('');
+  const [youtubeThumbnail, setYoutubeThumbnail] = useState(null); // { dataUrl, videoId }
 
   // 画像タイプ
   const [imageType,          setImageType]          = useState('photo');
@@ -256,6 +260,20 @@ export default function BackdropAI() {
     if (apiKey) localStorage.setItem('backdropai_key', apiKey);
   }, [apiKey]);
 
+  // URLモードでYouTube URLを検出したらサムネを自動取得・プレビュー
+  useEffect(() => {
+    if (inputMode !== 'url') { setYoutubeThumbnail(null); return; }
+    const videoId = extractYouTubeVideoId(inputText);
+    if (!videoId) { setYoutubeThumbnail(null); return; }
+    if (youtubeThumbnail?.videoId === videoId) return; // 同じ動画なら再取得しない
+
+    setYoutubeThumbnail(null);
+    fetchYouTubeThumbnail(videoId)
+      .then(thumb => setYoutubeThumbnail({ dataUrl: thumb.dataUrl, videoId }))
+      .catch(() => {}); // プレビュー失敗は無視（生成時にも再取得）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputText, inputMode]);
+
   // ネガティブプロンプト文字列を構築
   const buildNegativePrompt = useCallback(() => {
     const parts = [];
@@ -281,11 +299,40 @@ export default function BackdropAI() {
       // URLモード: コンテンツを取得・解析
       if (inputMode === 'url') {
         setLoadingIndex(0);
-        const urlContent = await fetchUrlContent(inputText);
-        analysisText = await analyzeContent(
-          urlContent || `Website: ${inputText}`,
-          apiKey
-        );
+        const videoId = extractYouTubeVideoId(inputText);
+
+        if (videoId) {
+          // YouTube: サムネイルを分析して背景生成に使う
+          const { description, thumbnail } = await analyzeYoutubeThumbnail(videoId, apiKey);
+          analysisText = description;
+          // サムネイルを参考画像として先頭に追加（ユーザーの参考画像は後ろに）
+          const refs = [thumbnail.dataUrl, locationRef, itemsRef, characterRef].filter(Boolean);
+
+          const basePrompt = buildPrompt({ inputText: analysisText, imageType, illustrationStyle, theme, atmosphere, mainColor, useColor, location, items, character });
+          const negativePrompt = buildNegativePrompt();
+          const finalPrompt = negativePrompt ? `${basePrompt}. Negative: ${negativePrompt}` : basePrompt;
+
+          const results = [];
+          for (let i = 0; i < variationCount; i++) {
+            setLoadingIndex(i + 1);
+            const dataUrl = await generateImage({ prompt: finalPrompt, apiKey, aspectRatio, referenceImages: refs });
+            results.push({ id: Date.now() + i, dataUrl });
+            setGeneratedImages([...results]);
+          }
+
+          const settings = { inputText: analysisText, imageType, illustrationStyle, theme, atmosphere, aspectRatio };
+          let updatedHistory = history;
+          for (const r of results) updatedHistory = await addToHistory(r.dataUrl, settings);
+          setHistory(updatedHistory);
+          return; // 以降の共通処理をスキップ
+        } else {
+          // 通常URL: テキスト解析
+          const urlContent = await fetchUrlContent(inputText);
+          analysisText = await analyzeContent(
+            urlContent || `Website: ${inputText}`,
+            apiKey
+          );
+        }
       }
 
       // プロンプトを構築
@@ -439,13 +486,38 @@ export default function BackdropAI() {
                 rows={3}
               />
             ) : (
-              <input
-                type="url"
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
-                placeholder="https://example.com"
-                className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-3 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors"
-              />
+              <>
+                <input
+                  type="url"
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  placeholder="https://youtube.com/watch?v=... または https://example.com"
+                  className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-3 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors"
+                />
+
+                {/* YouTubeサムネイルプレビュー */}
+                {youtubeThumbnail && (
+                  <div className="mt-2 rounded-xl overflow-hidden relative">
+                    <img
+                      src={youtubeThumbnail.dataUrl}
+                      alt="YouTube thumbnail"
+                      className="w-full aspect-video object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex items-end p-2">
+                      <span className="text-[10px] text-white bg-red-600 px-1.5 py-0.5 rounded font-bold">YouTube</span>
+                      <span className="text-[10px] text-gray-200 ml-2">サムネイルを背景の参考に使用</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* YouTube URL検出中のローディング */}
+                {inputMode === 'url' && extractYouTubeVideoId(inputText) && !youtubeThumbnail && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                    <Loader2 size={11} className="animate-spin" />
+                    サムネイルを読み込み中...
+                  </div>
+                )}
+              </>
             )}
           </SectionCard>
 

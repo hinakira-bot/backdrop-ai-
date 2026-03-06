@@ -18,11 +18,13 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
+  const { type } = req.query;
+
   try {
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; BackdropAI/1.0)',
-        Accept: 'text/html,application/xhtml+xml,text/plain',
+        Accept: type === 'image' ? 'image/*' : 'text/html,application/xhtml+xml,text/plain',
       },
       redirect: 'follow',
     });
@@ -31,9 +33,16 @@ export default async function handler(req, res) {
       return res.status(response.status).json({ error: `Remote server returned ${response.status}` });
     }
 
-    const html = await response.text();
+    // 画像取得モード: Base64で返す
+    if (type === 'image') {
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      return res.status(200).json({ base64, mimeType: contentType.split(';')[0] });
+    }
 
-    // HTMLからテキストを抽出
+    // テキスト取得モード: HTMLからテキストを抽出
+    const html = await response.text();
     const content = html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')

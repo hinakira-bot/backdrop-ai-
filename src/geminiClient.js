@@ -1,6 +1,82 @@
 import { GoogleGenAI } from '@google/genai';
 
 /**
+ * YouTube動画IDをURLから抽出する
+ */
+export function extractYouTubeVideoId(url) {
+  const patterns = [
+    /[?&]v=([^&#]+)/,        // youtube.com/watch?v=ID
+    /youtu\.be\/([^?&#]+)/,  // youtu.be/ID
+    /shorts\/([^?&#]+)/,     // youtube.com/shorts/ID
+    /embed\/([^?&#]+)/,      // youtube.com/embed/ID
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/**
+ * YouTubeサムネイルを取得してBase64とDataURLで返す
+ * maxresdefault → hqdefault の順でフォールバック
+ */
+export async function fetchYouTubeThumbnail(videoId) {
+  const sizes = ['maxresdefault', 'hqdefault', 'sddefault'];
+  for (const size of sizes) {
+    const thumbUrl = `https://img.youtube.com/vi/${videoId}/${size}.jpg`;
+    try {
+      const res = await fetch(`/api/proxy?url=${encodeURIComponent(thumbUrl)}&type=image`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.base64) {
+          return {
+            base64: data.base64,
+            mimeType: data.mimeType || 'image/jpeg',
+            dataUrl: `data:${data.mimeType || 'image/jpeg'};base64,${data.base64}`,
+          };
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('YouTubeサムネイルの取得に失敗しました');
+}
+
+/**
+ * YouTubeサムネイルをGeminiで分析して背景シーンの説明を返す
+ */
+export async function analyzeYoutubeThumbnail(videoId, apiKey) {
+  const thumbnail = await fetchYouTubeThumbnail(videoId);
+
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { data: thumbnail.base64, mimeType: thumbnail.mimeType } },
+        {
+          text: `Analyze the background and visual scene of this YouTube thumbnail.
+Describe in English (max 100 words) the elements that could be used to recreate a similar professional background image:
+- Scene/location/setting
+- Lighting and atmosphere
+- Color palette and mood
+- Key visual background elements (NOT the people or text in the foreground)
+Focus ONLY on background elements, not on people, faces, or text overlays.`,
+        },
+      ],
+    }],
+  });
+
+  return {
+    description: response.text.trim(),
+    thumbnail,
+  };
+}
+
+/**
  * URLのコンテンツをプロキシ経由で取得する
  */
 export async function fetchUrlContent(url) {

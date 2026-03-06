@@ -4,6 +4,7 @@ import {
   History, ChevronDown, ChevronUp, X, Plus, Minus,
   MapPin, Package, User, AlertCircle,
   Loader2, Key, Eye, EyeOff, Trash2, RefreshCw,
+  Shuffle, Save, Copy, Check, BookMarked, Pencil,
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import JSZip from 'jszip';
@@ -13,6 +14,22 @@ import {
 } from './geminiClient';
 
 // ===== 定数 =====
+
+const IMAGE_TYPES = [
+  { id: 'photo',    label: '📷 実写',       en: 'Photorealistic professional background photograph, high quality DSLR photography' },
+  { id: 'illust',   label: '🎨 イラスト',   en: null }, // サブスタイル選択
+  { id: '3dcg',     label: '🖥️ 3DCG',      en: 'Professional 3D CGI rendered background, photorealistic 3D visualization, studio quality 3D render' },
+  { id: 'texture',  label: '🪨 テクスチャ', en: 'High-resolution seamless background texture, abstract surface material, detailed pattern' },
+  { id: 'abstract', label: '✨ アブストラクト', en: 'Abstract art background, fluid dynamic shapes, flowing geometric forms, artistic abstract composition' },
+];
+
+const ILLUSTRATION_STYLES = [
+  { id: 'digital',    label: 'デジタルアート', en: 'digital painting, vibrant digital art illustration' },
+  { id: 'watercolor', label: '水彩',          en: 'watercolor painting, soft edges, artistic brush strokes, delicate washes' },
+  { id: 'flat',       label: 'フラット',       en: 'flat design illustration, geometric shapes, clean vector style' },
+  { id: 'anime',      label: 'アニメ/マンガ',  en: 'anime illustration, manga art style, Japanese animation aesthetic' },
+  { id: 'sketch',     label: 'スケッチ',       en: 'detailed pencil sketch, hand-drawn illustration, fine line art' },
+];
 
 const THEMES = [
   { id: 'business',  label: 'ビジネス',      en: 'clean professional business, corporate, minimalist white space' },
@@ -28,23 +45,15 @@ const THEMES = [
 ];
 
 const ATMOSPHERES = [
-  { id: 'morning', label: '朝',    en: 'early morning, soft golden sunrise light, calm peaceful atmosphere' },
-  { id: 'daytime', label: '昼',    en: 'bright midday, clear natural light, vivid colors' },
+  { id: 'morning', label: '朝',     en: 'early morning, soft golden sunrise light, calm peaceful atmosphere' },
+  { id: 'daytime', label: '昼',     en: 'bright midday, clear natural light, vivid colors' },
   { id: 'sunset',  label: '夕暮れ', en: 'sunset golden hour, warm orange pink light, dramatic colorful sky' },
-  { id: 'night',   label: '夜',    en: 'night time, moonlight, stars, dark atmospheric, glowing city lights' },
-  { id: 'cloudy',  label: '曇り',  en: 'overcast cloudy sky, soft diffused light, muted tones' },
+  { id: 'night',   label: '夜',     en: 'night time, moonlight, stars, dark atmospheric, glowing city lights' },
+  { id: 'cloudy',  label: '曇り',   en: 'overcast cloudy sky, soft diffused light, muted tones' },
   { id: 'foggy',   label: '霧・靄', en: 'misty foggy atmosphere, ethereal, mysterious soft light' },
-  { id: 'rainy',   label: '雨',    en: 'rainy weather, wet surfaces, reflections on ground, moody rain drops' },
-  { id: 'sunny',   label: '晴天',  en: 'bright sunny day, clear blue sky, vibrant energetic light' },
-  { id: 'none',    label: 'なし',  en: '' },
-];
-
-const ILLUSTRATION_STYLES = [
-  { id: 'digital',     label: 'デジタルアート', en: 'digital painting, vibrant digital art illustration' },
-  { id: 'watercolor',  label: '水彩',          en: 'watercolor painting, soft edges, artistic brush strokes, delicate washes' },
-  { id: 'flat',        label: 'フラット',       en: 'flat design illustration, geometric shapes, clean vector style' },
-  { id: 'anime',       label: 'アニメ/マンガ',  en: 'anime illustration, manga art style, Japanese animation aesthetic' },
-  { id: 'sketch',      label: 'スケッチ',       en: 'detailed pencil sketch, hand-drawn illustration, fine line art' },
+  { id: 'rainy',   label: '雨',     en: 'rainy weather, wet surfaces, reflections on ground, moody rain drops' },
+  { id: 'sunny',   label: '晴天',   en: 'bright sunny day, clear blue sky, vibrant energetic light' },
+  { id: 'none',    label: 'なし',   en: '' },
 ];
 
 const ASPECT_RATIOS = [
@@ -54,8 +63,10 @@ const ASPECT_RATIOS = [
   { id: '9:16', label: '9:16', desc: '縦長' },
 ];
 
-const HISTORY_KEY = 'backdropai_history';
-const MAX_HISTORY = 10;
+const HISTORY_KEY  = 'backdropai_history';
+const PRESETS_KEY  = 'backdropai_presets';
+const MAX_HISTORY  = 10;
+const MAX_PRESETS  = 12;
 
 // ===== ユーティリティ =====
 
@@ -63,37 +74,27 @@ function buildPrompt({ inputText, imageType, illustrationStyle, theme, atmospher
   const parts = [];
 
   // スタイル
-  if (imageType === 'photo') {
-    parts.push('Photorealistic professional background photograph, high quality DSLR photography');
-  } else {
+  const typeObj = IMAGE_TYPES.find(t => t.id === imageType);
+  if (imageType === 'illust') {
     const style = ILLUSTRATION_STYLES.find(s => s.id === illustrationStyle);
-    parts.push(`Professional ${style?.en || 'illustration'} background artwork`);
+    parts.push(`Professional ${style?.en || 'digital illustration'} background artwork`);
+  } else {
+    parts.push(typeObj?.en || 'Professional background image');
   }
 
-  // メインコンテンツ
-  if (inputText) {
-    parts.push(`Visual theme: ${inputText}`);
-  }
+  if (inputText) parts.push(`Visual theme: ${inputText}`);
 
-  // テーマ
   const themeObj = THEMES.find(t => t.id === theme);
   if (themeObj) parts.push(`Aesthetic: ${themeObj.en}`);
 
-  // 雰囲気
   const atmObj = ATMOSPHERES.find(a => a.id === atmosphere);
   if (atmObj?.en) parts.push(`Atmosphere: ${atmObj.en}`);
 
-  // カラー
-  if (useColor && mainColor) {
-    parts.push(`Primary color palette: ${mainColor}, harmonious complementary colors`);
-  }
-
-  // 詳細
-  if (location) parts.push(`Scene/Location: ${location}`);
-  if (items)    parts.push(`Featured objects/elements: ${items}`);
+  if (useColor && mainColor) parts.push(`Primary color palette: ${mainColor}, harmonious complementary colors`);
+  if (location)  parts.push(`Scene/Location: ${location}`);
+  if (items)     parts.push(`Featured objects/elements: ${items}`);
   if (character) parts.push(`Characters: ${character}`);
 
-  // 品質
   parts.push(
     'Wide landscape orientation, suitable as website or presentation background',
     'Professional quality, high resolution, no text overlay, no watermarks'
@@ -119,31 +120,33 @@ function compressToThumbnail(dataUrl, maxWidth = 400) {
 }
 
 function loadHistory() {
-  try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+  catch { return []; }
 }
 
 async function addToHistory(imageDataUrl, settings) {
   try {
     const history = loadHistory();
     const thumbnail = await compressToThumbnail(imageDataUrl);
-    const newItem = { id: Date.now(), thumbnail, imageDataUrl, settings, timestamp: new Date().toISOString() };
-    const updated = [newItem, ...history].slice(0, MAX_HISTORY);
+    const updated = [{ id: Date.now(), thumbnail, imageDataUrl, settings, timestamp: new Date().toISOString() }, ...history].slice(0, MAX_HISTORY);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
     return updated;
-  } catch {
-    return loadHistory();
-  }
+  } catch { return loadHistory(); }
+}
+
+function loadPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function savePresets(presets) {
+  localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
 }
 
 // ===== サブコンポーネント =====
 
 function RefImageUpload({ value, onChange }) {
   const inputRef = useRef();
-
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -151,27 +154,19 @@ function RefImageUpload({ value, onChange }) {
     reader.onload = (ev) => onChange(ev.target.result);
     reader.readAsDataURL(file);
   };
-
   return (
     <div>
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
       {value ? (
         <div className="relative group rounded-lg overflow-hidden">
           <img src={value} alt="reference" className="w-full h-16 object-cover" />
-          <button
-            onClick={() => onChange(null)}
-            className="absolute top-1 right-1 bg-black/70 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
+          <button onClick={() => onChange(null)} className="absolute top-1 right-1 bg-black/70 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <X size={11} />
           </button>
         </div>
       ) : (
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="w-full h-12 border border-dashed border-gray-600 rounded-lg text-gray-500 text-xs hover:border-indigo-500 hover:text-indigo-400 transition-colors flex items-center justify-center gap-1.5"
-        >
-          <Plus size={12} />
-          参考画像
+        <button onClick={() => inputRef.current?.click()} className="w-full h-12 border border-dashed border-gray-600 rounded-lg text-gray-500 text-xs hover:border-indigo-500 hover:text-indigo-400 transition-colors flex items-center justify-center gap-1.5">
+          <Plus size={12} />参考画像
         </button>
       )}
     </div>
@@ -181,11 +176,7 @@ function RefImageUpload({ value, onChange }) {
 function SectionCard({ title, children }) {
   return (
     <div className="bg-gray-900 rounded-2xl p-4">
-      {title && (
-        <h3 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          {title}
-        </h3>
-      )}
+      {title && <h3 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">{title}</h3>}
       {children}
     </div>
   );
@@ -193,13 +184,8 @@ function SectionCard({ title, children }) {
 
 function Toggle({ enabled, onToggle }) {
   return (
-    <button
-      onClick={onToggle}
-      className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${enabled ? 'bg-indigo-600' : 'bg-gray-700'}`}
-    >
-      <span
-        className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`}
-      />
+    <button onClick={onToggle} className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${enabled ? 'bg-indigo-600' : 'bg-gray-700'}`}>
+      <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
     </button>
   );
 }
@@ -208,17 +194,17 @@ function Toggle({ enabled, onToggle }) {
 
 export default function BackdropAI() {
   // APIキー
-  const [apiKey, setApiKey]   = useState(() => localStorage.getItem('backdropai_key') || '');
-  const [showKey, setShowKey] = useState(false);
+  const [apiKey,   setApiKey]   = useState(() => localStorage.getItem('backdropai_key') || '');
+  const [showKey,  setShowKey]  = useState(false);
 
   // 入力
-  const [inputMode, setInputMode] = useState('text'); // 'text' | 'url'
-  const [inputText, setInputText] = useState('');
-  const [youtubeThumbnail, setYoutubeThumbnail] = useState(null); // { dataUrl, videoId }
+  const [inputMode,        setInputMode]        = useState('text');
+  const [inputText,        setInputText]        = useState('');
+  const [youtubeThumbnail, setYoutubeThumbnail] = useState(null);
 
   // 画像タイプ
-  const [imageType,          setImageType]          = useState('photo');
-  const [illustrationStyle,  setIllustrationStyle]  = useState('digital');
+  const [imageType,         setImageType]         = useState('photo');
+  const [illustrationStyle, setIllustrationStyle] = useState('digital');
 
   // ビジュアル設定
   const [aspectRatio, setAspectRatio] = useState('16:9');
@@ -236,13 +222,8 @@ export default function BackdropAI() {
   const [characterRef, setCharacterRef] = useState(null);
 
   // ネガティブプロンプト
-  const [negToggles, setNegToggles] = useState({
-    noText:      true,
-    noPeople:    false,
-    noLogo:      true,
-    noWatermark: true,
-  });
-  const [negCustom, setNegCustom] = useState('');
+  const [negToggles, setNegToggles] = useState({ noText: true, noPeople: false, noLogo: true, noWatermark: true });
+  const [negCustom,  setNegCustom]  = useState('');
 
   // 生成
   const [variationCount,  setVariationCount]  = useState(2);
@@ -251,30 +232,41 @@ export default function BackdropAI() {
   const [loadingIndex,    setLoadingIndex]    = useState(0);
   const [error,           setError]           = useState('');
 
+  // ① プロンプト表示・編集
+  const [lastPrompt,       setLastPrompt]       = useState('');
+  const [editPrompt,       setEditPrompt]       = useState('');
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+
+  // ② プリセット
+  const [presets,         setPresets]         = useState(() => loadPresets());
+  const [showPresets,     setShowPresets]     = useState(false);
+  const [presetNameInput, setPresetNameInput] = useState('');
+  const [showPresetInput, setShowPresetInput] = useState(false);
+
+  // ③ クリップボードコピー
+  const [copiedId, setCopiedId] = useState(null);
+
   // 履歴
   const [history,     setHistory]     = useState(() => loadHistory());
   const [showHistory, setShowHistory] = useState(false);
 
-  // APIキーをLocalStorageに保存
   useEffect(() => {
     if (apiKey) localStorage.setItem('backdropai_key', apiKey);
   }, [apiKey]);
 
-  // URLモードでYouTube URLを検出したらサムネを自動取得・プレビュー
+  // YouTube URL検出 → サムネ自動取得
   useEffect(() => {
     if (inputMode !== 'url') { setYoutubeThumbnail(null); return; }
     const videoId = extractYouTubeVideoId(inputText);
     if (!videoId) { setYoutubeThumbnail(null); return; }
-    if (youtubeThumbnail?.videoId === videoId) return; // 同じ動画なら再取得しない
-
+    if (youtubeThumbnail?.videoId === videoId) return;
     setYoutubeThumbnail(null);
     fetchYouTubeThumbnail(videoId)
       .then(thumb => setYoutubeThumbnail({ dataUrl: thumb.dataUrl, videoId }))
-      .catch(() => {}); // プレビュー失敗は無視（生成時にも再取得）
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputText, inputMode]);
 
-  // ネガティブプロンプト文字列を構築
   const buildNegativePrompt = useCallback(() => {
     const parts = [];
     if (negToggles.noText)      parts.push('no text, no typography, no lettering');
@@ -285,8 +277,108 @@ export default function BackdropAI() {
     return parts.join(', ');
   }, [negToggles, negCustom]);
 
+  // ④ ランダム探索
+  const randomize = useCallback(() => {
+    setTheme(THEMES[Math.floor(Math.random() * THEMES.length)].id);
+    const atms = ATMOSPHERES.filter(a => a.id !== 'none');
+    setAtmosphere(atms[Math.floor(Math.random() * atms.length)].id);
+    const typeId = IMAGE_TYPES[Math.floor(Math.random() * IMAGE_TYPES.length)].id;
+    setImageType(typeId);
+    if (typeId === 'illust') {
+      setIllustrationStyle(ILLUSTRATION_STYLES[Math.floor(Math.random() * ILLUSTRATION_STYLES.length)].id);
+    }
+  }, []);
+
+  // ③ クリップボードコピー
+  const copyToClipboard = useCallback(async (dataUrl, id) => {
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // フォールバック: リンクコピー
+      await navigator.clipboard.writeText(dataUrl);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
+  }, []);
+
+  // ② プリセット操作
+  const handleSavePreset = useCallback(() => {
+    const name = presetNameInput.trim();
+    if (!name) return;
+    const preset = {
+      id: Date.now(), name,
+      imageType, illustrationStyle, aspectRatio, theme, atmosphere,
+      mainColor, useColor, location, items, character,
+      negToggles, negCustom, variationCount,
+    };
+    const updated = [preset, ...presets].slice(0, MAX_PRESETS);
+    setPresets(updated);
+    savePresets(updated);
+    setPresetNameInput('');
+    setShowPresetInput(false);
+  }, [presetNameInput, imageType, illustrationStyle, aspectRatio, theme, atmosphere, mainColor, useColor, location, items, character, negToggles, negCustom, variationCount, presets]);
+
+  const handleLoadPreset = useCallback((preset) => {
+    setImageType(preset.imageType);
+    setIllustrationStyle(preset.illustrationStyle);
+    setAspectRatio(preset.aspectRatio);
+    setTheme(preset.theme);
+    setAtmosphere(preset.atmosphere);
+    setMainColor(preset.mainColor);
+    setUseColor(preset.useColor);
+    setLocation(preset.location || '');
+    setItems(preset.items || '');
+    setCharacter(preset.character || '');
+    setNegToggles(preset.negToggles);
+    setNegCustom(preset.negCustom || '');
+    setVariationCount(preset.variationCount);
+    setShowPresets(false);
+  }, []);
+
+  const handleDeletePreset = useCallback((id) => {
+    const updated = presets.filter(p => p.id !== id);
+    setPresets(updated);
+    savePresets(updated);
+  }, [presets]);
+
+  // 画像生成（共通処理）
+  const runGeneration = useCallback(async (finalPrompt, refs) => {
+    const results = [];
+    for (let i = 0; i < variationCount; i++) {
+      setLoadingIndex(i + 1);
+      const dataUrl = await generateImage({ prompt: finalPrompt, apiKey, aspectRatio, referenceImages: refs });
+      results.push({ id: Date.now() + i, dataUrl });
+      setGeneratedImages([...results]);
+    }
+    const settings = { imageType, illustrationStyle, theme, atmosphere, aspectRatio };
+    let updatedHistory = history;
+    for (const r of results) updatedHistory = await addToHistory(r.dataUrl, settings);
+    setHistory(updatedHistory);
+  }, [variationCount, apiKey, aspectRatio, imageType, illustrationStyle, theme, atmosphere, history]);
+
+  // ① プロンプト編集後に再生成
+  const handleRegenerateWithPrompt = useCallback(async () => {
+    if (!editPrompt.trim()) return;
+    setLoading(true);
+    setError('');
+    setGeneratedImages([]);
+    try {
+      const refs = [locationRef, itemsRef, characterRef].filter(Boolean);
+      await runGeneration(editPrompt, refs);
+    } catch (e) {
+      setError(e.message || '生成中にエラーが発生しました');
+    } finally {
+      setLoading(false);
+      setLoadingIndex(0);
+    }
+  }, [editPrompt, locationRef, itemsRef, characterRef, runGeneration]);
+
   const handleGenerate = useCallback(async () => {
-    if (!apiKey.trim())  { setError('Gemini APIキーを入力してください'); return; }
+    if (!apiKey.trim())    { setError('Gemini APIキーを入力してください'); return; }
     if (!inputText.trim()) { setError('テキストまたはURLを入力してください'); return; }
 
     setLoading(true);
@@ -295,89 +387,31 @@ export default function BackdropAI() {
 
     try {
       let analysisText = inputText;
+      let refs = [locationRef, itemsRef, characterRef].filter(Boolean);
 
-      // URLモード: コンテンツを取得・解析
       if (inputMode === 'url') {
         setLoadingIndex(0);
         const videoId = extractYouTubeVideoId(inputText);
 
         if (videoId) {
-          // YouTube: サムネイルを分析して背景生成に使う
           const { description, thumbnail } = await analyzeYoutubeThumbnail(videoId, apiKey);
           analysisText = description;
-          // サムネイルを参考画像として先頭に追加（ユーザーの参考画像は後ろに）
-          const refs = [thumbnail.dataUrl, locationRef, itemsRef, characterRef].filter(Boolean);
-
-          const basePrompt = buildPrompt({ inputText: analysisText, imageType, illustrationStyle, theme, atmosphere, mainColor, useColor, location, items, character });
-          const negativePrompt = buildNegativePrompt();
-          const finalPrompt = negativePrompt ? `${basePrompt}. Negative: ${negativePrompt}` : basePrompt;
-
-          const results = [];
-          for (let i = 0; i < variationCount; i++) {
-            setLoadingIndex(i + 1);
-            const dataUrl = await generateImage({ prompt: finalPrompt, apiKey, aspectRatio, referenceImages: refs });
-            results.push({ id: Date.now() + i, dataUrl });
-            setGeneratedImages([...results]);
-          }
-
-          const settings = { inputText: analysisText, imageType, illustrationStyle, theme, atmosphere, aspectRatio };
-          let updatedHistory = history;
-          for (const r of results) updatedHistory = await addToHistory(r.dataUrl, settings);
-          setHistory(updatedHistory);
-          return; // 以降の共通処理をスキップ
+          refs = [thumbnail.dataUrl, ...refs]; // サムネを先頭に追加
         } else {
-          // 通常URL: テキスト解析
           const urlContent = await fetchUrlContent(inputText);
-          analysisText = await analyzeContent(
-            urlContent || `Website: ${inputText}`,
-            apiKey
-          );
+          analysisText = await analyzeContent(urlContent || `Website: ${inputText}`, apiKey);
         }
       }
 
-      // プロンプトを構築
-      const basePrompt = buildPrompt({
-        inputText: analysisText,
-        imageType,
-        illustrationStyle,
-        theme,
-        atmosphere,
-        mainColor,
-        useColor,
-        location,
-        items,
-        character,
-      });
-
+      const basePrompt = buildPrompt({ inputText: analysisText, imageType, illustrationStyle, theme, atmosphere, mainColor, useColor, location, items, character });
       const negativePrompt = buildNegativePrompt();
-      const finalPrompt = negativePrompt
-        ? `${basePrompt}. Negative: ${negativePrompt}`
-        : basePrompt;
+      const finalPrompt = negativePrompt ? `${basePrompt}. Negative: ${negativePrompt}` : basePrompt;
 
-      // 参考画像をまとめる
-      const refs = [locationRef, itemsRef, characterRef].filter(Boolean);
+      // ① プロンプトを保存（表示・編集用）
+      setLastPrompt(finalPrompt);
+      setEditPrompt(finalPrompt);
 
-      // バリエーション生成
-      const results = [];
-      for (let i = 0; i < variationCount; i++) {
-        setLoadingIndex(i + 1);
-        const dataUrl = await generateImage({
-          prompt: finalPrompt,
-          apiKey,
-          aspectRatio,
-          referenceImages: refs,
-        });
-        results.push({ id: Date.now() + i, dataUrl });
-        setGeneratedImages([...results]);
-      }
-
-      // 履歴に保存
-      const settings = { inputText: analysisText, imageType, illustrationStyle, theme, atmosphere, aspectRatio };
-      let updatedHistory = history;
-      for (const r of results) {
-        updatedHistory = await addToHistory(r.dataUrl, settings);
-      }
-      setHistory(updatedHistory);
+      await runGeneration(finalPrompt, refs);
 
     } catch (e) {
       setError(e.message || '生成中にエラーが発生しました');
@@ -391,32 +425,21 @@ export default function BackdropAI() {
     location, items, character,
     locationRef, itemsRef, characterRef,
     negToggles, negCustom,
-    variationCount, aspectRatio,
-    buildNegativePrompt, history,
+    buildNegativePrompt, runGeneration,
   ]);
 
-  const downloadImage = (dataUrl, index) => {
-    saveAs(dataUrl, `backdrop_${Date.now()}_${index + 1}.jpg`);
-  };
+  const downloadImage = (dataUrl, index) => saveAs(dataUrl, `backdrop_${Date.now()}_${index + 1}.jpg`);
 
   const downloadAll = async () => {
     if (generatedImages.length === 0) return;
     const zip = new JSZip();
     const folder = zip.folder('backdrops');
-    generatedImages.forEach((img, i) => {
-      folder.file(`backdrop_${i + 1}.jpg`, img.dataUrl.split(',')[1], { base64: true });
-    });
+    generatedImages.forEach((img, i) => folder.file(`backdrop_${i + 1}.jpg`, img.dataUrl.split(',')[1], { base64: true }));
     saveAs(await zip.generateAsync({ type: 'blob' }), `backdrops_${Date.now()}.zip`);
   };
 
-  const clearHistory = () => {
-    localStorage.removeItem(HISTORY_KEY);
-    setHistory([]);
-  };
-
+  const clearHistory = () => { localStorage.removeItem(HISTORY_KEY); setHistory([]); };
   const toggleNeg = (key) => setNegToggles(prev => ({ ...prev, [key]: !prev[key] }));
-
-  // アスペクト比に応じたプレビュースタイル
   const previewAspect = aspectRatio.replace(':', '/');
 
   return (
@@ -434,8 +457,6 @@ export default function BackdropAI() {
               <p className="text-[11px] text-gray-400 mt-0.5">フリー背景画像ジェネレーター</p>
             </div>
           </div>
-
-          {/* APIキー入力 */}
           <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2">
             <Key size={13} className="text-gray-400 flex-shrink-0" />
             <input
@@ -452,69 +473,43 @@ export default function BackdropAI() {
         </div>
       </header>
 
-      {/* メインレイアウト */}
       <div className="max-w-7xl mx-auto p-6 flex gap-6 items-start">
 
-        {/* ===== 左パネル: 設定 ===== */}
+        {/* ===== 左パネル ===== */}
         <div className="w-72 flex-shrink-0 space-y-4">
 
           {/* 入力モード */}
           <SectionCard>
             <div className="flex bg-gray-800 rounded-xl p-1 mb-3">
-              {[
-                { id: 'text', label: 'テキスト', icon: <Type size={12} /> },
-                { id: 'url',  label: 'URL',      icon: <Link size={12} /> },
-              ].map(mode => (
-                <button
-                  key={mode.id}
-                  onClick={() => setInputMode(mode.id)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-sm transition-colors ${
-                    inputMode === mode.id ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {mode.icon}{mode.label}
+              {[{ id: 'text', label: 'テキスト', icon: <Type size={12} /> }, { id: 'url', label: 'URL', icon: <Link size={12} /> }].map(m => (
+                <button key={m.id} onClick={() => setInputMode(m.id)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-sm transition-colors ${inputMode === m.id ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+                  {m.icon}{m.label}
                 </button>
               ))}
             </div>
-
             {inputMode === 'text' ? (
-              <textarea
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
+              <textarea value={inputText} onChange={e => setInputText(e.target.value)}
                 placeholder="背景のイメージを入力&#13;&#10;例：東京の夜景、抽象的な波模様、カフェの窓際"
                 className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-3 text-sm resize-none outline-none border border-gray-700 focus:border-indigo-500 transition-colors"
-                rows={3}
-              />
+                rows={3} />
             ) : (
               <>
-                <input
-                  type="url"
-                  value={inputText}
-                  onChange={e => setInputText(e.target.value)}
+                <input type="url" value={inputText} onChange={e => setInputText(e.target.value)}
                   placeholder="https://youtube.com/watch?v=... または https://example.com"
-                  className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-3 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors"
-                />
-
-                {/* YouTubeサムネイルプレビュー */}
+                  className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-3 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors" />
                 {youtubeThumbnail && (
                   <div className="mt-2 rounded-xl overflow-hidden relative">
-                    <img
-                      src={youtubeThumbnail.dataUrl}
-                      alt="YouTube thumbnail"
-                      className="w-full aspect-video object-cover"
-                    />
+                    <img src={youtubeThumbnail.dataUrl} alt="YouTube thumbnail" className="w-full aspect-video object-cover" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex items-end p-2">
                       <span className="text-[10px] text-white bg-red-600 px-1.5 py-0.5 rounded font-bold">YouTube</span>
                       <span className="text-[10px] text-gray-200 ml-2">サムネイルを背景の参考に使用</span>
                     </div>
                   </div>
                 )}
-
-                {/* YouTube URL検出中のローディング */}
                 {inputMode === 'url' && extractYouTubeVideoId(inputText) && !youtubeThumbnail && (
                   <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
-                    <Loader2 size={11} className="animate-spin" />
-                    サムネイルを読み込み中...
+                    <Loader2 size={11} className="animate-spin" />サムネイルを読み込み中...
                   </div>
                 )}
               </>
@@ -523,35 +518,23 @@ export default function BackdropAI() {
 
           {/* 画像タイプ */}
           <SectionCard title="タイプ">
-            <div className="flex gap-2 mb-3">
-              {[
-                { id: 'photo',        label: '📷 実写' },
-                { id: 'illustration', label: '🎨 イラスト' },
-              ].map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => setImageType(t.id)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
-                    imageType === t.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
+            <div className="grid grid-cols-2 gap-1.5 mb-2">
+              {IMAGE_TYPES.slice(0, 4).map(t => (
+                <button key={t.id} onClick={() => setImageType(t.id)}
+                  className={`py-2 px-2 rounded-xl text-xs font-medium text-center transition-colors ${imageType === t.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
                   {t.label}
                 </button>
               ))}
             </div>
-
-            {imageType === 'illustration' && (
-              <div className="grid grid-cols-2 gap-1.5">
+            <button onClick={() => setImageType('abstract')}
+              className={`w-full py-2 rounded-xl text-xs font-medium transition-colors ${imageType === 'abstract' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+              {IMAGE_TYPES[4].label}
+            </button>
+            {imageType === 'illust' && (
+              <div className="grid grid-cols-2 gap-1.5 mt-2">
                 {ILLUSTRATION_STYLES.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => setIllustrationStyle(s.id)}
-                    className={`py-1.5 px-2 rounded-lg text-xs transition-colors text-left ${
-                      illustrationStyle === s.id
-                        ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/50'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                    }`}
-                  >
+                  <button key={s.id} onClick={() => setIllustrationStyle(s.id)}
+                    className={`py-1.5 px-2 rounded-lg text-xs transition-colors text-left ${illustrationStyle === s.id ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/50' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
                     {s.label}
                   </button>
                 ))}
@@ -559,17 +542,12 @@ export default function BackdropAI() {
             )}
           </SectionCard>
 
-          {/* アスペクト比 */}
+          {/* サイズ */}
           <SectionCard title="サイズ">
             <div className="grid grid-cols-4 gap-2">
               {ASPECT_RATIOS.map(r => (
-                <button
-                  key={r.id}
-                  onClick={() => setAspectRatio(r.id)}
-                  className={`py-2 rounded-xl text-center transition-colors ${
-                    aspectRatio === r.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
+                <button key={r.id} onClick={() => setAspectRatio(r.id)}
+                  className={`py-2 rounded-xl text-center transition-colors ${aspectRatio === r.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
                   <div className="text-xs font-bold">{r.label}</div>
                   <div className="text-[9px] opacity-70 mt-0.5">{r.desc}</div>
                 </button>
@@ -581,30 +559,20 @@ export default function BackdropAI() {
           <SectionCard title="テーマ / テイスト">
             <div className="grid grid-cols-2 gap-1.5">
               {THEMES.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => setTheme(t.id)}
-                  className={`py-2 px-3 rounded-xl text-sm text-left transition-colors ${
-                    theme === t.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
+                <button key={t.id} onClick={() => setTheme(t.id)}
+                  className={`py-2 px-3 rounded-xl text-sm text-left transition-colors ${theme === t.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
                   {t.label}
                 </button>
               ))}
             </div>
           </SectionCard>
 
-          {/* 雰囲気・時間帯 */}
+          {/* 雰囲気 */}
           <SectionCard title="雰囲気 / 時間帯">
             <div className="grid grid-cols-3 gap-1.5">
               {ATMOSPHERES.map(a => (
-                <button
-                  key={a.id}
-                  onClick={() => setAtmosphere(a.id)}
-                  className={`py-2 rounded-xl text-xs text-center transition-colors ${
-                    atmosphere === a.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
+                <button key={a.id} onClick={() => setAtmosphere(a.id)}
+                  className={`py-2 rounded-xl text-xs text-center transition-colors ${atmosphere === a.id ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
                   {a.label}
                 </button>
               ))}
@@ -619,104 +587,48 @@ export default function BackdropAI() {
             </div>
             {useColor && (
               <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={mainColor}
-                  onChange={e => setMainColor(e.target.value)}
-                  className="w-12 h-10 rounded-xl cursor-pointer"
-                />
+                <input type="color" value={mainColor} onChange={e => setMainColor(e.target.value)} className="w-12 h-10 rounded-xl cursor-pointer" />
                 <div>
                   <div className="text-sm font-mono text-white">{mainColor}</div>
                   <div className="text-xs text-gray-500">ベースカラー</div>
                 </div>
-                <div
-                  className="flex-1 h-10 rounded-xl border border-gray-700"
-                  style={{ background: `linear-gradient(135deg, ${mainColor}aa, ${mainColor})` }}
-                />
+                <div className="flex-1 h-10 rounded-xl border border-gray-700" style={{ background: `linear-gradient(135deg, ${mainColor}aa, ${mainColor})` }} />
               </div>
             )}
           </SectionCard>
 
-          {/* 詳細設定: 場所・アイテム・キャラ */}
+          {/* 詳細設定 */}
           <SectionCard title="詳細設定">
             <div className="space-y-4">
-
-              {/* 場所 */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-                  <MapPin size={11} className="text-indigo-400" />
-                  場所 / シーン
-                </label>
-                <input
-                  value={location}
-                  onChange={e => setLocation(e.target.value)}
-                  placeholder="例：東京の繁華街、森の中、海辺"
-                  className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-2.5 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors mb-2"
-                />
-                <RefImageUpload value={locationRef} onChange={setLocationRef} />
-              </div>
-
-              {/* アイテム */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-                  <Package size={11} className="text-indigo-400" />
-                  アイテム / オブジェクト
-                </label>
-                <input
-                  value={items}
-                  onChange={e => setItems(e.target.value)}
-                  placeholder="例：本とコーヒー、花、ノートPC"
-                  className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-2.5 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors mb-2"
-                />
-                <RefImageUpload value={itemsRef} onChange={setItemsRef} />
-              </div>
-
-              {/* キャラクター */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-                  <User size={11} className="text-indigo-400" />
-                  キャラクター
-                </label>
-                <input
-                  value={character}
-                  onChange={e => setCharacter(e.target.value)}
-                  placeholder="例：スーツの女性、ロボット、猫"
-                  className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-2.5 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors mb-2"
-                />
-                <RefImageUpload value={characterRef} onChange={setCharacterRef} />
-              </div>
+              {[
+                { label: '場所 / シーン', icon: <MapPin size={11} className="text-indigo-400" />, value: location, onChange: setLocation, placeholder: '例：東京の繁華街、森の中、海辺', ref: locationRef, setRef: setLocationRef },
+                { label: 'アイテム / オブジェクト', icon: <Package size={11} className="text-indigo-400" />, value: items, onChange: setItems, placeholder: '例：本とコーヒー、花、ノートPC', ref: itemsRef, setRef: setItemsRef },
+                { label: 'キャラクター', icon: <User size={11} className="text-indigo-400" />, value: character, onChange: setCharacter, placeholder: '例：スーツの女性、ロボット、猫', ref: characterRef, setRef: setCharacterRef },
+              ].map(({ label, icon, value, onChange, placeholder, ref, setRef }) => (
+                <div key={label}>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">{icon}{label}</label>
+                  <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+                    className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-2.5 text-sm outline-none border border-gray-700 focus:border-indigo-500 transition-colors mb-2" />
+                  <RefImageUpload value={ref} onChange={setRef} />
+                </div>
+              ))}
             </div>
           </SectionCard>
 
           {/* 除外設定 */}
           <SectionCard title="除外設定">
             <div className="grid grid-cols-2 gap-2 mb-3">
-              {[
-                { key: 'noText',      label: '文字なし' },
-                { key: 'noPeople',   label: '人物なし' },
-                { key: 'noLogo',     label: 'ロゴなし' },
-                { key: 'noWatermark', label: '透かしなし' },
-              ].map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => toggleNeg(key)}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-colors ${
-                    negToggles[key]
-                      ? 'bg-red-900/40 text-red-300 border border-red-700/50'
-                      : 'bg-gray-800 text-gray-500 hover:bg-gray-700'
-                  }`}
-                >
+              {[{ key: 'noText', label: '文字なし' }, { key: 'noPeople', label: '人物なし' }, { key: 'noLogo', label: 'ロゴなし' }, { key: 'noWatermark', label: '透かしなし' }].map(({ key, label }) => (
+                <button key={key} onClick={() => toggleNeg(key)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-colors ${negToggles[key] ? 'bg-red-900/40 text-red-300 border border-red-700/50' : 'bg-gray-800 text-gray-500 hover:bg-gray-700'}`}>
                   {negToggles[key] ? '✓ ' : ''}{label}
                 </button>
               ))}
             </div>
-            <textarea
-              value={negCustom}
-              onChange={e => setNegCustom(e.target.value)}
+            <textarea value={negCustom} onChange={e => setNegCustom(e.target.value)}
               placeholder="その他の除外指示（英語推奨）"
               className="w-full bg-gray-800 text-white placeholder-gray-500 rounded-xl p-2.5 text-xs resize-none outline-none border border-gray-700 focus:border-indigo-500 transition-colors"
-              rows={2}
-            />
+              rows={2} />
           </SectionCard>
 
           {/* バリエーション数 */}
@@ -724,75 +636,99 @@ export default function BackdropAI() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-400">一度に生成する枚数</span>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setVariationCount(v => Math.max(1, v - 1))}
-                  className="w-7 h-7 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-gray-700 text-gray-300"
-                >
-                  <Minus size={13} />
-                </button>
+                <button onClick={() => setVariationCount(v => Math.max(1, v - 1))} className="w-7 h-7 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-gray-700 text-gray-300"><Minus size={13} /></button>
                 <span className="text-xl font-bold text-white w-5 text-center">{variationCount}</span>
-                <button
-                  onClick={() => setVariationCount(v => Math.min(4, v + 1))}
-                  className="w-7 h-7 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-gray-700 text-gray-300"
-                >
-                  <Plus size={13} />
-                </button>
+                <button onClick={() => setVariationCount(v => Math.min(4, v + 1))} className="w-7 h-7 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-gray-700 text-gray-300"><Plus size={13} /></button>
               </div>
             </div>
           </SectionCard>
+
+          {/* ② プリセット */}
+          <div className="bg-gray-900 rounded-2xl overflow-hidden">
+            <button onClick={() => setShowPresets(!showPresets)}
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors">
+              <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                <BookMarked size={12} />設定プリセット ({presets.length}/{MAX_PRESETS})
+              </div>
+              {showPresets ? <ChevronUp size={13} className="text-gray-400" /> : <ChevronDown size={13} className="text-gray-400" />}
+            </button>
+            {showPresets && (
+              <div className="px-4 pb-4 space-y-2">
+                {/* 保存ボタン */}
+                {!showPresetInput ? (
+                  <button onClick={() => setShowPresetInput(true)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-600/30 rounded-xl text-xs transition-colors">
+                    <Save size={11} />現在の設定を保存
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <input value={presetNameInput} onChange={e => setPresetNameInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleSavePreset()}
+                      placeholder="プリセット名"
+                      className="flex-1 bg-gray-800 text-white placeholder-gray-500 rounded-lg px-2.5 py-1.5 text-xs outline-none border border-gray-700 focus:border-indigo-500"
+                      autoFocus />
+                    <button onClick={handleSavePreset} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs">保存</button>
+                    <button onClick={() => { setShowPresetInput(false); setPresetNameInput(''); }} className="px-2 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs"><X size={11} /></button>
+                  </div>
+                )}
+                {/* プリセット一覧 */}
+                {presets.length > 0 && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {presets.map(p => (
+                      <div key={p.id} className="flex items-center gap-2 bg-gray-800 rounded-xl px-3 py-2">
+                        <span className="flex-1 text-xs text-gray-200 truncate">{p.name}</span>
+                        <button onClick={() => handleLoadPreset(p)} className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium">適用</button>
+                        <button onClick={() => handleDeletePreset(p.id)} className="text-gray-600 hover:text-red-400 transition-colors"><Trash2 size={11} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* ===== 右パネル: プレビュー & 履歴 ===== */}
+        {/* ===== 右パネル ===== */}
         <div className="flex-1 min-w-0">
 
-          {/* 生成ボタン */}
-          <button
-            onClick={handleGenerate}
-            disabled={loading}
-            className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:bg-indigo-900 disabled:text-indigo-400 text-white rounded-2xl font-semibold text-base flex items-center justify-center gap-2.5 transition-colors mb-5 shadow-lg shadow-indigo-900/30"
-          >
-            {loading ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                生成中... ({loadingIndex}/{variationCount}枚目)
-              </>
-            ) : (
-              <>
-                <Sparkles size={18} />
-                背景画像を生成
-              </>
-            )}
-          </button>
+          {/* 生成ボタン + ④ ランダムボタン */}
+          <div className="flex gap-3 mb-5">
+            <button onClick={randomize} disabled={loading}
+              className="flex items-center gap-2 px-4 py-4 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-2xl font-medium text-sm transition-colors flex-shrink-0"
+              title="テーマ・雰囲気・タイプをランダム探索">
+              <Shuffle size={16} />ランダム
+            </button>
+            <button onClick={handleGenerate} disabled={loading}
+              className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:bg-indigo-900 disabled:text-indigo-400 text-white rounded-2xl font-semibold text-base flex items-center justify-center gap-2.5 transition-colors shadow-lg shadow-indigo-900/30">
+              {loading ? (
+                <><Loader2 size={18} className="animate-spin" />生成中... ({loadingIndex}/{variationCount}枚目)</>
+              ) : (
+                <><Sparkles size={18} />背景画像を生成</>
+              )}
+            </button>
+          </div>
 
-          {/* エラー表示 */}
+          {/* エラー */}
           {error && (
             <div className="mb-5 bg-red-900/30 border border-red-700/50 rounded-xl p-3.5 flex items-start gap-2.5 text-red-300 text-sm">
-              <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
+              <AlertCircle size={15} className="flex-shrink-0 mt-0.5" /><span>{error}</span>
             </div>
           )}
 
           {/* 生成結果 */}
           {generatedImages.length > 0 && (
-            <div className="bg-gray-900 rounded-2xl p-5 mb-5">
+            <div className="bg-gray-900 rounded-2xl p-5 mb-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-gray-200">生成結果 ({generatedImages.length}枚)</h2>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleGenerate}
-                    disabled={loading}
-                    className="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw size={11} />
-                    再生成
+                  <button onClick={handleGenerate} disabled={loading}
+                    className="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                    <RefreshCw size={11} />再生成
                   </button>
                   {generatedImages.length > 1 && (
-                    <button
-                      onClick={downloadAll}
-                      className="flex items-center gap-1.5 text-xs bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-600/30 px-3 py-1.5 rounded-lg transition-colors"
-                    >
-                      <Download size={11} />
-                      ZIP一括DL
+                    <button onClick={downloadAll}
+                      className="flex items-center gap-1.5 text-xs bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-600/30 px-3 py-1.5 rounded-lg transition-colors">
+                      <Download size={11} />ZIP一括DL
                     </button>
                   )}
                 </div>
@@ -801,55 +737,74 @@ export default function BackdropAI() {
               <div className={`grid gap-4 ${generatedImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 {generatedImages.map((img, i) => (
                   <div key={img.id} className="relative group rounded-xl overflow-hidden bg-gray-800">
-                    <img
-                      src={img.dataUrl}
-                      alt={`Generated ${i + 1}`}
-                      className="w-full object-cover"
-                      style={{ aspectRatio: previewAspect }}
-                    />
+                    <img src={img.dataUrl} alt={`Generated ${i + 1}`} className="w-full object-cover" style={{ aspectRatio: previewAspect }} />
                     {/* ホバーオーバーレイ */}
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <button
-                        onClick={() => downloadImage(img.dataUrl, i)}
-                        className="flex items-center gap-2 bg-white text-gray-900 px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-gray-100 transition-colors shadow-lg"
-                      >
-                        <Download size={14} />
-                        ダウンロード
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                      {/* ③ クリップボードコピー */}
+                      <button onClick={() => copyToClipboard(img.dataUrl, img.id)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium text-xs transition-colors shadow-lg ${copiedId === img.id ? 'bg-green-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'}`}>
+                        {copiedId === img.id ? <><Check size={13} />コピー済み</> : <><Copy size={13} />コピー</>}
+                      </button>
+                      <button onClick={() => downloadImage(img.dataUrl, i)}
+                        className="flex items-center gap-2 bg-white text-gray-900 px-4 py-2 rounded-xl font-semibold text-xs hover:bg-gray-100 transition-colors shadow-lg">
+                        <Download size={13} />DL
                       </button>
                     </div>
-                    {/* バッジ */}
-                    <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full">
-                      #{i + 1}
-                    </div>
+                    <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full">#{i + 1}</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
+          {/* ① プロンプト表示・編集 */}
+          {lastPrompt && (
+            <div className="bg-gray-900 rounded-2xl overflow-hidden mb-4">
+              <button onClick={() => setShowPromptEditor(!showPromptEditor)}
+                className="w-full flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-300">
+                  <Pencil size={13} />生成プロンプト（編集して再生成可）
+                </div>
+                {showPromptEditor ? <ChevronUp size={13} className="text-gray-400" /> : <ChevronDown size={13} className="text-gray-400" />}
+              </button>
+              {showPromptEditor && (
+                <div className="px-4 pb-4">
+                  <textarea value={editPrompt} onChange={e => setEditPrompt(e.target.value)}
+                    className="w-full bg-gray-800 text-gray-200 placeholder-gray-500 rounded-xl p-3 text-xs font-mono resize-none outline-none border border-gray-700 focus:border-indigo-500 transition-colors mb-3"
+                    rows={5} />
+                  <div className="flex gap-2">
+                    <button onClick={handleRegenerateWithPrompt} disabled={loading}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors">
+                      <Sparkles size={12} />このプロンプトで再生成
+                    </button>
+                    <button onClick={() => setEditPrompt(lastPrompt)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs transition-colors">
+                      <RefreshCw size={11} />リセット
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 空状態 */}
           {generatedImages.length === 0 && !loading && (
-            <div className="bg-gray-900 rounded-2xl p-16 text-center mb-5">
+            <div className="bg-gray-900 rounded-2xl p-16 text-center mb-4">
               <div className="w-16 h-16 bg-gray-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <ImageIcon size={28} className="text-gray-600" />
               </div>
               <p className="text-gray-500 text-sm leading-relaxed">
-                左パネルで設定を入力して<br />
-                「背景画像を生成」をクリックしてください
+                左パネルで設定を入力して<br />「背景画像を生成」をクリック
               </p>
             </div>
           )}
 
-          {/* ローディング中のプレースホルダー */}
+          {/* ローディングプレースホルダー */}
           {loading && generatedImages.length === 0 && (
-            <div className="bg-gray-900 rounded-2xl p-5 mb-5">
+            <div className="bg-gray-900 rounded-2xl p-5 mb-4">
               <div className={`grid gap-4 ${variationCount === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 {Array.from({ length: variationCount }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="bg-gray-800 rounded-xl animate-pulse flex items-center justify-center"
-                    style={{ aspectRatio: previewAspect }}
-                  >
+                  <div key={i} className="bg-gray-800 rounded-xl animate-pulse flex items-center justify-center" style={{ aspectRatio: previewAspect }}>
                     <Loader2 size={24} className="text-gray-600 animate-spin" />
                   </div>
                 ))}
@@ -857,54 +812,40 @@ export default function BackdropAI() {
             </div>
           )}
 
-          {/* 生成履歴 */}
+          {/* 履歴 */}
           {history.length > 0 && (
             <div className="bg-gray-900 rounded-2xl overflow-hidden">
-              <button
-                onClick={() => setShowHistory(!showHistory)}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors"
-              >
+              <button onClick={() => setShowHistory(!showHistory)}
+                className="w-full flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-300">
-                  <History size={14} />
-                  生成履歴 ({history.length}/{MAX_HISTORY})
+                  <History size={14} />生成履歴 ({history.length}/{MAX_HISTORY})
                 </div>
                 {showHistory ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
               </button>
-
               {showHistory && (
                 <div className="px-4 pb-4">
                   <div className="grid grid-cols-5 gap-2 mb-3">
                     {history.map(item => (
                       <div key={item.id} className="relative group rounded-lg overflow-hidden bg-gray-800">
-                        <img
-                          src={item.thumbnail || item.imageDataUrl}
-                          alt="history"
-                          className="w-full aspect-video object-cover"
-                        />
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <button
-                            onClick={() => saveAs(item.imageDataUrl, `backdrop_history_${item.id}.jpg`)}
-                            className="bg-white text-gray-900 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                            title="ダウンロード"
-                          >
-                            <Download size={12} />
+                        <img src={item.thumbnail || item.imageDataUrl} alt="history" className="w-full aspect-video object-cover" />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                          <button onClick={() => copyToClipboard(item.imageDataUrl, `h_${item.id}`)}
+                            className="bg-white/20 text-white p-1.5 rounded-lg hover:bg-white/30 transition-colors">
+                            {copiedId === `h_${item.id}` ? <Check size={10} /> : <Copy size={10} />}
+                          </button>
+                          <button onClick={() => saveAs(item.imageDataUrl, `backdrop_history_${item.id}.jpg`)}
+                            className="bg-white text-gray-900 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+                            <Download size={10} />
                           </button>
                         </div>
-                        {/* タイムスタンプ */}
                         <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1">
-                          <p className="text-[9px] text-gray-300 truncate">
-                            {item.settings?.theme || ''}
-                          </p>
+                          <p className="text-[9px] text-gray-300 truncate">{item.settings?.theme || ''}</p>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <button
-                    onClick={clearHistory}
-                    className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors"
-                  >
-                    <Trash2 size={11} />
-                    履歴をクリア
+                  <button onClick={clearHistory} className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors">
+                    <Trash2 size={11} />履歴をクリア
                   </button>
                 </div>
               )}

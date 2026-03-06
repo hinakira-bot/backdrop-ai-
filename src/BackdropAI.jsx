@@ -173,10 +173,15 @@ function RefImageUpload({ value, onChange }) {
   );
 }
 
-function SectionCard({ title, children }) {
+function SectionCard({ title, desc, children }) {
   return (
     <div className="bg-gray-900 rounded-2xl p-4">
-      {title && <h3 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">{title}</h3>}
+      {title && (
+        <h3 className={`text-[11px] font-semibold text-gray-400 uppercase tracking-wider ${desc ? 'mb-1' : 'mb-3'}`}>
+          {title}
+        </h3>
+      )}
+      {desc && <p className="text-[10px] text-gray-500 leading-relaxed mb-3">{desc}</p>}
       {children}
     </div>
   );
@@ -479,7 +484,7 @@ export default function BackdropAI() {
         <div className="w-72 flex-shrink-0 space-y-4">
 
           {/* 入力モード */}
-          <SectionCard>
+          <SectionCard desc="テキストで背景のイメージを指定するか、WebサイトやYouTube動画のURLから自動分析します">
             <div className="flex bg-gray-800 rounded-xl p-1 mb-3">
               {[{ id: 'text', label: 'テキスト', icon: <Type size={12} /> }, { id: 'url', label: 'URL', icon: <Link size={12} /> }].map(m => (
                 <button key={m.id} onClick={() => setInputMode(m.id)}
@@ -517,7 +522,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* 画像タイプ */}
-          <SectionCard title="タイプ">
+          <SectionCard title="タイプ" desc="背景画像のビジュアルスタイルを選択します。イラストを選ぶとサブスタイルが表示されます">
             <div className="grid grid-cols-2 gap-1.5 mb-2">
               {IMAGE_TYPES.slice(0, 4).map(t => (
                 <button key={t.id} onClick={() => setImageType(t.id)}
@@ -543,7 +548,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* サイズ */}
-          <SectionCard title="サイズ">
+          <SectionCard title="サイズ" desc="16:9はプレゼン・Web用、1:1はSNS用、9:16はストーリー・縦型コンテンツ用に最適です">
             <div className="grid grid-cols-4 gap-2">
               {ASPECT_RATIOS.map(r => (
                 <button key={r.id} onClick={() => setAspectRatio(r.id)}
@@ -556,7 +561,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* テーマ */}
-          <SectionCard title="テーマ / テイスト">
+          <SectionCard title="テーマ / テイスト" desc="画像全体の美的スタイル・世界観を決定します。最も影響が大きい設定です">
             <div className="grid grid-cols-2 gap-1.5">
               {THEMES.map(t => (
                 <button key={t.id} onClick={() => setTheme(t.id)}
@@ -568,7 +573,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* 雰囲気 */}
-          <SectionCard title="雰囲気 / 時間帯">
+          <SectionCard title="雰囲気 / 時間帯" desc="光・天候・時間帯でムードを調整します。「なし」を選ぶとAIに委ねます">
             <div className="grid grid-cols-3 gap-1.5">
               {ATMOSPHERES.map(a => (
                 <button key={a.id} onClick={() => setAtmosphere(a.id)}
@@ -580,7 +585,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* メインカラー */}
-          <SectionCard title="メインカラー">
+          <SectionCard title="メインカラー" desc="ONにすると指定カラーを中心とした色調で生成します。ブランドカラーに合わせたい場合に便利です">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm text-gray-400">カラー指定</span>
               <Toggle enabled={useColor} onToggle={() => setUseColor(!useColor)} />
@@ -598,7 +603,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* 詳細設定 */}
-          <SectionCard title="詳細設定">
+          <SectionCard title="詳細設定" desc="場所・物・キャラクターを具体的に指定できます。参考画像をアップすると視覚スタイルの一致度が上がります">
             <div className="space-y-4">
               {[
                 { label: '場所 / シーン', icon: <MapPin size={11} className="text-indigo-400" />, value: location, onChange: setLocation, placeholder: '例：東京の繁華街、森の中、海辺', ref: locationRef, setRef: setLocationRef },
@@ -616,7 +621,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* 除外設定 */}
-          <SectionCard title="除外設定">
+          <SectionCard title="除外設定" desc="生成画像に含めたくない要素を指定します。フリー素材として使う場合は「文字なし・ロゴなし」を推奨します">
             <div className="grid grid-cols-2 gap-2 mb-3">
               {[{ key: 'noText', label: '文字なし' }, { key: 'noPeople', label: '人物なし' }, { key: 'noLogo', label: 'ロゴなし' }, { key: 'noWatermark', label: '透かしなし' }].map(({ key, label }) => (
                 <button key={key} onClick={() => toggleNeg(key)}
@@ -632,7 +637,7 @@ export default function BackdropAI() {
           </SectionCard>
 
           {/* バリエーション数 */}
-          <SectionCard title="バリエーション数">
+          <SectionCard title="バリエーション数" desc="同時に生成する枚数です。多いほど選択肢が増えますが時間がかかります（最大4枚）">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-400">一度に生成する枚数</span>
               <div className="flex items-center gap-3">
